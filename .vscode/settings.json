@@ -2,6 +2,7 @@
     "files.associations": {
         "dense": "cpp",
         "iostream": "cpp",
-        "random": "cpp"
+        "random": "cpp",
+        "core": "cpp"
     }
 }
