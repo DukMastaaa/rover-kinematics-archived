@@ -1,6 +1,7 @@
 #include "robotmath.h"
 
 #include <math.h>
+#include <iostream>
 
 using Eigen::Matrix3f;
 using Eigen::Vector3f;
@@ -29,6 +30,22 @@ Matrix3f matrixExpRotation(float angle, const Vector3f& axis) {
 }
 
 
+Twist::Twist() {
+    Vector6f();
+}
+
+
+Twist::Twist(Vector6f& vector) {
+    // TODO: very hacky solution, i'm not sure if there are any better ways...
+    Vector6f::operator=(vector);
+}
+
+Twist::Twist(const Vector6f& vector) {
+    // TODO: AEUGH
+    Vector6f::operator=(vector);
+}
+
+
 Eigen::VectorBlock<Vector6f, 3> Twist::angularPart() {
     return head<3>();
 }
@@ -49,7 +66,7 @@ const Eigen::VectorBlock<const Vector6f, 3> Twist::linearPart() const {
 }
 
 
-Affine3D matrixExpTwist(float angle, const Twist& screw) {
+Affine3D matrixExpScrew(float angle, const Twist& screw) {
     Affine3D transformation = Affine3D::Identity();
 
     if (screw.angularPart().isZero()) {
@@ -76,10 +93,24 @@ Affine3D matrixExpTwist(float angle, const Twist& screw) {
 
         Vector3f normalisedAngularAxis = screw.angularPart().normalized();
 
-        // USING FUNCTIONS PROVIDED IN EIGEN:
+        // USING FUNCTIONS PROVIDED IN EIGEN (probably the better option):
         transformation.rotate(Eigen::AngleAxisf(angle, normalisedAngularAxis));
-        // USING MY FUNCTIONS HERE (alternate option, commented out):
-        transformation.matrix().topLeftCorner(3, 3) = matrixExpRotation(angle, normalisedAngularAxis);
+        // USING FUNCTIONS DEFINED HERE (alternate option, commented out):
+        // transformation.matrix().topLeftCorner(3, 3) = matrixExpRotation(angle, normalisedAngularAxis);
     }
     return transformation;
+}
+
+
+Affine3D forwardKinematics(const JointAngleVector& vec_theta, const ScrewArray& screwAxes) {
+    Affine3D output = Affine3D::Identity();
+    for (int i = 0; i < jointCount; i++) {
+        // this line required as you can't go through two implicit conversions at once
+        const Vector6f& screwAxis = screwAxes.col(i);
+        // for some reason, you can't multiply a transformation matrix by another one with *=,
+        // even both of them have been declared as affine transformations, not projective...
+        // you have to do *= with a normal matrix. oh well.
+        output *= matrixExpScrew(vec_theta[i], screwAxis).matrix();
+    }
+    return output;
 }
