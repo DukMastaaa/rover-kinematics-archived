@@ -43,6 +43,28 @@ class Twist : public Vector6f {
 };
 
 
+// TODO: is this an issue: https://eigen.tuxfamily.org/dox/group__TopicStructHavingEigenMembers.html
+
+// Stores the result of the matrix logarithm applied to a rotation matrix.
+// If the rotation is the identity, `angle` = 0 and `axis` is the zero matrix.
+// Otherwise, `axis` is a skew-symmmetric matrix representation of a
+// unit vector, and 0 <= `angle` <= pi.
+// This struct is returned by `matrixLogRotation()`.
+struct MatrixLogRotationResult {
+    public:
+        float angle;
+        Matrix3f axisSkewSym;
+};
+
+
+// Stores the result of the matrix logarithm applied to a transformation matrix.
+struct MatrixLogTransformationResult {
+    public:
+        float angle;
+        Twist screw;
+};
+
+
 // Returns the skew-symmetric representation [v] of a vector v in R3.
 // This is defined such that for another vector w, [v]w = v x w
 // where x denotes the cross product.
@@ -62,20 +84,34 @@ Matrix4f twistToMatrixRepr(const Twist& twist);
 Twist matrixReprToTwist(const Matrix4f& matrix);
 
 
+// Returns the inverse of a transformation matrix.
+Affine3D transformationInverse(const Affine3D& transformation);
+
+
 // Returns the adjoint representation of a transformation matrix.
 Matrix6f adjointRepr(const Affine3D& transformation);
 
 
 // Calculates the rotation matrix (through matrix exponential) obtained
 // by rotating about `axis` by `angle`. Warning: `axis` must be normalised!
-// 
-// This can also be done with Eigen using `Eigen::AngleAxisf`.
+// Eigen provides this functionality through the `Eigen::AngleAxis` class.
 Matrix3f matrixExpRotation(float angle, const Vector3f& axis);
 
 
 // Returns the transformation matrix (through matrix exponential) obtained
 // by following `screw` by `angle`.
-Affine3D matrixExpScrew(float angle, const Twist& screw);
+Affine3D matrixExpTransformation(float angle, const Twist& screw);
+
+
+// Calculates the matrix logarithm of a rotation matrix in SO(3).
+// Returns a struct containing an angle and screw axis.
+// Eigen provides this functionality through the `Eigen::AngleAxis` class.
+MatrixLogRotationResult matrixLogRotation(const Matrix3f& rotation);
+
+
+// Calculates the matrix logarithm of a transformation matrix in SE(3).
+// Returns a struct containing an angle and twist.
+MatrixLogTransformationResult matrixLogTransformation(const Affine3D& transformation);
 
 
 // Returns the product of exponentials e^{ [S1]theta1 } e^{ [S2]theta2 } ...

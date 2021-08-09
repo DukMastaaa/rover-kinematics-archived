@@ -3,6 +3,7 @@
         "dense": "cpp",
         "iostream": "cpp",
         "random": "cpp",
-        "core": "cpp"
+        "core": "cpp",
+        "cmath": "cpp"
     }
 }

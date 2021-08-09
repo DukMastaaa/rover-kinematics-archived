@@ -39,7 +39,7 @@ void generalTest() {
     // std::cout << meow << '\n';
     // std::cout << screw + beans << '\n';
 
-    // Affine3D trans = matrixExpScrew(0.5 * EIGEN_PI, screw);
+    // Affine3D trans = matrixExpTransformation(0.5 * EIGEN_PI, screw);
     // std::cout << trans.matrix() << '\n';
 }
 

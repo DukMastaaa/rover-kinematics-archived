@@ -74,6 +74,17 @@ Twist matrixReprToTwist(const Matrix4f& matrix) {
 }
 
 
+Affine3D transformationInverse(const Affine3D& transformation) {
+    // Given T = [ R, p; 0, 1 ],
+    // T^{-1} = [ R^T, -R^T p; 0, 1 ].
+    Affine3D inverse = Affine3D::Identity();
+    const Matrix3f& Rtranspose = transformation.rotation().transpose();
+    inverse.matrix().topLeftCorner(3, 3) = Rtranspose;
+    inverse.matrix().topRightCorner(3, 1) = -Rtranspose * transformation.translation();
+    return inverse;
+}
+
+
 Matrix6f adjointRepr(const Affine3D& transformation) {
     // [Ad_T] =
     // [
@@ -102,7 +113,7 @@ Matrix3f matrixExpRotation(float angle, const Vector3f& axis) {
 }
 
 
-Affine3D matrixExpScrew(float angle, const Twist& screw) {
+Affine3D matrixExpTransformation(float angle, const Twist& screw) {
     Affine3D transformation = Affine3D::Identity();
 
     if (screw.angularPart().isZero()) {
@@ -138,12 +149,60 @@ Affine3D matrixExpScrew(float angle, const Twist& screw) {
 }
 
 
+MatrixLogRotationResult matrixLogRotation(const Matrix3f& rotation) {
+    if (rotation.isIdentity()) {
+        return {0, Matrix3f::Zero()};
+    }
+
+    if (rotation.trace() == -1) {
+        // weird case --- print out that this case actually happened.
+        std::cout << "weird matrix log rotation case\n";
+        Vector3f axis;
+        // just going to use the first solution listed in Modern Robotics textbook
+        axis << rotation(0, 2), rotation(1, 2), 1 + rotation(2, 2);
+        axis *= 1 / std::sqrtf(2 * (1 + rotation(2, 2)));
+        return {EIGEN_PI, vecToSkewSym(axis)};
+    }
+
+    float angle = std::acosf(0.5 * (rotation.trace() - 1));  // angle in [0, pi)
+    // the sin(angle) below can be turned into explicit form, using the identity 
+    // sin(arccos(x)) = sqrt(1 - x^2). i'm leaving this out for now though. 
+    Matrix3f axisSkewSym = (rotation - rotation.transpose()) / (2 * std::sin(angle));
+    return {angle, axisSkewSym};
+}
+
+
+MatrixLogTransformationResult matrixLogTransformation(const Affine3D& transformation) {
+    if (transformation.rotation().isIdentity()) {
+        Twist screw = Twist::Zero();
+        screw.linearPart() = transformation.translation().normalized();
+        return {transformation.translation().norm(), screw};
+    }
+
+    MatrixLogRotationResult rotationLog = matrixLogRotation(transformation.rotation());
+    const Matrix3f& axisSkewSym = rotationLog.axisSkewSym;
+    float angle = rotationLog.angle;
+
+    Twist screw;
+    screw.angularPart() = skewSymToVec(axisSkewSym);
+    
+    // Sv = G^{-1} p where p is from transformation and
+    // G^{-1} = 1/theta I - 1/2 [Sw] + ( 1/theta - 1/2 cot(theta/2) ) [Sw]^2.
+    Matrix3f Ginv = (1 / angle) * Matrix3f::Identity()
+        - 0.5 * axisSkewSym
+        + ( 1 / angle - 0.5 / std::tan(0.5 * angle) ) * (axisSkewSym * axisSkewSym);
+    screw.linearPart() = Ginv * transformation.translation();
+
+    return {angle, screw};
+}
+
+
 Affine3D forwardKinematics(const JointAngleVector& vec_theta, const ScrewArray& screwAxes) {
     Affine3D output = Affine3D::Identity();
     for (int i = 0; i < jointCount; i++) {
         // this line required as you can't go through two implicit conversions at once
         const Vector6f& screw = screwAxes.col(i);
-        output = output * matrixExpScrew(vec_theta[i], screw);
+        output = output * matrixExpTransformation(vec_theta[i], screw);
     }
     return output;
 }
@@ -161,7 +220,7 @@ Jacobian spaceJacobian(const JointAngleVector& vec_theta, const ScrewArray& scre
 
     for (int i = 1; i < jointCount; i++) {
         const Vector6f& screw = screwAxes.col(i-1);
-        M = M * matrixExpScrew(vec_theta[i-1], screw);
+        M = M * matrixExpTransformation(vec_theta[i-1], screw);
         jacobian.col(i) = adjointRepr(M) * screwAxes.col(i);
     }
     return jacobian;
@@ -176,13 +235,13 @@ Jacobian bodyJacobian(const JointAngleVector& vec_theta, const ScrewArray& screw
     // Negative exponent indicates matrix inverse.
     Jacobian jacobian;
     jacobian.col(jointCount - 1) = screwAxes.col(jointCount - 1);
-    // for (int i = 2; i < jointCount; i++) {
-    //     Affine3D M = Affine3D::Identity();
-    //     for (int j = 0; j < i; j++) {
-    //         const Vector6f& screw = screwAxes.col(j);
-    //         M = M * matrixExpScrew(vec_theta[j], screw);
-    //     }
-    //     jacobian.col(i) = adjointRepr(M) * screwAxes.col(i);
-    // }
+    
+    Affine3D M = Affine3D::Identity();
+
+    for (int i = jointCount - 2; i > 0; i--) {
+        const Vector6f& screw = screwAxes.col(i+1);
+        M = transformationInverse(matrixExpTransformation(vec_theta[i+1], screw)) * M;
+        jacobian.col(i) = adjointRepr(M) * screwAxes.col(i);
+    }
     return jacobian;
 }
