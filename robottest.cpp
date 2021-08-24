@@ -60,13 +60,16 @@ void forwardKinematicsTest() {
     ).finished().transpose();
 
     // theta_1 = pi/4, theta_2 = pi/4
-    JointAngleVector vec_theta;
-    vec_theta << 0.25 * EIGEN_PI, 0.25 * EIGEN_PI;
+    JointAngleVector vecTheta;
+    vecTheta << 0.5, 0.5;
     
-    Affine3D transformation = forwardKinematics(vec_theta, screwAxes);
+    Affine3D transformation = forwardKinematics(vecTheta, screwAxes);
     
-    zeroConfiguration = transformation * zeroConfiguration;
-    std::cout << zeroConfiguration.matrix() << '\n';
+    Affine3D newTransformation = transformation * zeroConfiguration;
+    std::cout << newTransformation.matrix() << '\n';
+
+    JointAngleVector invTheta = inverseKinematics(JointAngleVector(0.5, 0.48), screwAxes, newTransformation);
+    std::cout << invTheta << '\n';
 }
 
 
@@ -94,12 +97,26 @@ void forwardKinematicsUR5() {
     ).finished().transpose();
 
     // all angles are pi/4
-    JointAngleVector vec_theta = JointAngleVector::Constant(0.25 * EIGEN_PI);
+    JointAngleVector vecTheta = JointAngleVector::Constant(0.25 * EIGEN_PI);
     
-    Affine3D transformation = forwardKinematics(vec_theta, screwAxes);
+    Affine3D transformation = forwardKinematics(vecTheta, screwAxes);
     
     Affine3D finalConfiguration = transformation * zeroConfiguration;
     std::cout << finalConfiguration.matrix() << '\n';
+}
+
+
+void uhh() {
+    Affine3D trans = Affine3D::Identity();
+    trans.rotate(Eigen::AngleAxisf(0.5 * EIGEN_PI, Vector3f(1, 1, 1).normalized()));
+    Matrix3f rot = trans.rotation();
+    std::cout << rot << '\n';
+
+    Eigen::AngleAxisf eigen(rot);
+    std::cout << eigen.angle() << ' ' << eigen.axis() << '\n';
+
+    MatrixLogRotationResult mine = matrixLogRotation(rot);
+    std::cout << mine.angle << ' ' << skewSymToVec(mine.axisSkewSym) << '\n';
 }
 
 
@@ -107,5 +124,5 @@ int main() {
     // generalTest();
     forwardKinematicsTest();
     // forwardKinematicsUR5();
-
+    // uhh();
 }

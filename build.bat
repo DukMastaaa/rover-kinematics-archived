@@ -1,4 +1,4 @@
-g++ -c -I ./Eigen/src -Wall -Wpedantic robotmath.cpp -o robotmath
+g++ -c -I ./Eigen/src -O1 -Wall -Wpedantic robotmath.cpp -o robotmath
 move robotmath ./bin/robotmath
 
 g++ -c -I ./Eigen/src -Wall -Wpedantic robottest.cpp -o robottest

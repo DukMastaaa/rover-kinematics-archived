@@ -1,5 +1,7 @@
 #pragma once
 
+#define EIGEN_STRONG_INLINE inline
+
 #include "Eigen/Dense"
 #include "Eigen/Geometry"
 
@@ -95,6 +97,7 @@ Matrix6f adjointRepr(const Affine3D& transformation);
 // Calculates the rotation matrix (through matrix exponential) obtained
 // by rotating about `axis` by `angle`. Warning: `axis` must be normalised!
 // Eigen provides this functionality through the `Eigen::AngleAxis` class.
+// pog article https://doi.org/10.1016/j.cam.2009.11.032
 Matrix3f matrixExpRotation(float angle, const Vector3f& axis);
 
 
@@ -119,12 +122,16 @@ MatrixLogTransformationResult matrixLogTransformation(const Affine3D& transforma
 // Note that if screws are expressed in the body frame, post-multiply M 
 // by the output. If screws are expressed in the space frame, pre-multiply
 // M by the output.
-Affine3D forwardKinematics(const JointAngleVector& vec_theta, const ScrewArray& screwAxes);
+Affine3D forwardKinematics(const JointAngleVector& vecTheta, const ScrewArray& screwAxes);
 
 
 // Calculates the Jacobian matrix expressed in the space frame at the given joint angles.
-Jacobian spaceJacobian(const JointAngleVector& vec_theta, const ScrewArray& screwAxes);
+Jacobian spaceJacobian(const JointAngleVector& vecTheta, const ScrewArray& screwAxes);
 
 
 // Calculates the Jacobian matrix expressed in the body frame at the given joint angles.
-Jacobian bodyJacobian(const JointAngleVector& vec_theta, const ScrewArray& screwAxes);
+Jacobian bodyJacobian(const JointAngleVector& vecTheta, const ScrewArray& screwAxes);
+
+
+JointAngleVector inverseKinematics(const JointAngleVector& initialGuess,
+        const ScrewArray& screwAxes, const Affine3D& endPose);

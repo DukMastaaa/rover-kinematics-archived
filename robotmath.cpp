@@ -160,11 +160,11 @@ MatrixLogRotationResult matrixLogRotation(const Matrix3f& rotation) {
         Vector3f axis;
         // just going to use the first solution listed in Modern Robotics textbook
         axis << rotation(0, 2), rotation(1, 2), 1 + rotation(2, 2);
-        axis *= 1 / std::sqrtf(2 * (1 + rotation(2, 2)));
+        axis *= 1 / std::sqrt(2 * (1 + rotation(2, 2)));
         return {EIGEN_PI, vecToSkewSym(axis)};
     }
 
-    float angle = std::acosf(0.5 * (rotation.trace() - 1));  // angle in [0, pi)
+    float angle = std::acos(0.5 * (rotation.trace() - 1));  // angle in [0, pi)
     // the sin(angle) below can be turned into explicit form, using the identity 
     // sin(arccos(x)) = sqrt(1 - x^2). i'm leaving this out for now though. 
     Matrix3f axisSkewSym = (rotation - rotation.transpose()) / (2 * std::sin(angle));
@@ -174,8 +174,9 @@ MatrixLogRotationResult matrixLogRotation(const Matrix3f& rotation) {
 
 MatrixLogTransformationResult matrixLogTransformation(const Affine3D& transformation) {
     if (transformation.rotation().isIdentity()) {
-        Twist screw = Twist::Zero();
+        Twist screw;
         screw.linearPart() = transformation.translation().normalized();
+        screw.angularPart() = Vector3f::Zero();
         return {transformation.translation().norm(), screw};
     }
 
@@ -197,18 +198,18 @@ MatrixLogTransformationResult matrixLogTransformation(const Affine3D& transforma
 }
 
 
-Affine3D forwardKinematics(const JointAngleVector& vec_theta, const ScrewArray& screwAxes) {
+Affine3D forwardKinematics(const JointAngleVector& vecTheta, const ScrewArray& screwAxes) {
     Affine3D output = Affine3D::Identity();
     for (int i = 0; i < jointCount; i++) {
         // this line required as you can't go through two implicit conversions at once
         const Vector6f& screw = screwAxes.col(i);
-        output = output * matrixExpTransformation(vec_theta[i], screw);
+        output = output * matrixExpTransformation(vecTheta[i], screw);
     }
     return output;
 }
 
 
-Jacobian spaceJacobian(const JointAngleVector& vec_theta, const ScrewArray& screwAxes) {
+Jacobian spaceJacobian(const JointAngleVector& vecTheta, const ScrewArray& screwAxes) {
     // J_s = [ J_s1 ... J_sn ] where n is number of joints and
     // J_s1 = S1,
     // J_si = [Ad_M] S_i for i = 2, ..., n; and
@@ -220,14 +221,14 @@ Jacobian spaceJacobian(const JointAngleVector& vec_theta, const ScrewArray& scre
 
     for (int i = 1; i < jointCount; i++) {
         const Vector6f& screw = screwAxes.col(i-1);
-        M = M * matrixExpTransformation(vec_theta[i-1], screw);
+        M = M * matrixExpTransformation(vecTheta[i-1], screw);
         jacobian.col(i) = adjointRepr(M) * screwAxes.col(i);
     }
     return jacobian;
 }
 
 
-Jacobian bodyJacobian(const JointAngleVector& vec_theta, const ScrewArray& screwAxes) {
+Jacobian bodyJacobian(const JointAngleVector& vecTheta, const ScrewArray& screwAxes) {
     // J_b = [ J_b1 ... J_bn ] where n is number of joints and
     // J_bn = Bn,
     // J_bi = [Ad_M] B_i for i = 1, ..., n-1; and
@@ -240,8 +241,56 @@ Jacobian bodyJacobian(const JointAngleVector& vec_theta, const ScrewArray& screw
 
     for (int i = jointCount - 2; i > 0; i--) {
         const Vector6f& screw = screwAxes.col(i+1);
-        M = transformationInverse(matrixExpTransformation(vec_theta[i+1], screw)) * M;
+        M = transformationInverse(matrixExpTransformation(vecTheta[i+1], screw)) * M;
         jacobian.col(i) = adjointRepr(M) * screwAxes.col(i);
     }
     return jacobian;
+}
+
+
+JointAngleVector inverseKinematics(const JointAngleVector& initialGuess, const ScrewArray& screwAxes, const Affine3D& endPose) {
+    // These are minimum thresholds for angular and linear parts of the calculated
+    // body twist. If norms of both components are less than these thresholds
+    // then algorithm stops.
+    static constexpr const float epsAngular = 0.01;
+    static constexpr const float epsLinear = 0.01;
+
+    float angularNorm = 0;
+    float linearNorm = 0;
+    JointAngleVector vecTheta = initialGuess;
+
+    // todo: i don't believe this works as i think it does.
+    // see comment attached to declaration of `jacobian`.
+    Eigen::CompleteOrthogonalDecomposition<Jacobian> codSolver;
+
+    int counter = 0;
+
+    do {
+        std::cout << "Iteration: " << counter << '\n' << vecTheta << '\n';
+
+        // Set [Vb] = log( T_{sb}^{-1} T_{sd} ) where T_{sb} is evaluated at
+        // the current guess.
+        MatrixLogTransformationResult logResult = matrixLogTransformation(
+            transformationInverse(forwardKinematics(vecTheta, screwAxes)) * endPose
+        );
+        const Twist& bodyTwist = logResult.screw;
+        angularNorm = bodyTwist.angularPart().norm();
+        linearNorm = bodyTwist.linearPart().norm();
+
+        // We have the equation J \Delta theta = Vb.
+        // To solve for theta even if J is singular, use least-squares solution
+        // supplied by complete orthogonal decomposition, minimising
+        // || J \Delta theta - Vb ||.
+        // Then, new theta = old theta + \Delta theta.
+        Jacobian jacobian = bodyJacobian(vecTheta, screwAxes);
+        codSolver.compute(jacobian);
+        vecTheta += codSolver.solve(bodyTwist);
+
+        Eigen::Matrix<float, jointCount, 6> pseudoInverse = (jacobian.transpose() * jacobian).inverse() * jacobian.transpose();
+
+        vecTheta += pseudoInverse * bodyTwist;
+        counter++;
+    } while (angularNorm > epsAngular || linearNorm > epsLinear);
+
+    return vecTheta;
 }
