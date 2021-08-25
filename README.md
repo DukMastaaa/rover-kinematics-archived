@@ -1,4 +1,4 @@
-# rover-kinematics-archived (archived)
+# rover-kinematics-archived
 
 This is an abandoned repository containing math and algorithms used for
 rigid body dynamics in the context of forward/inverse kinematics.
